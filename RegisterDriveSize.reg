@@ -1,0 +1,4 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\Cpls]
+"Statystyki Dysku"="C:\\Windows\\System32\\DriveSize.cpl"

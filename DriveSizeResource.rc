@@ -1,1 +1,11 @@
+#define LANG_NEUTRAL 0x00
+#define SUBLANG_NEUTRAL 0x00
+
 1 ICON "HDD-ClearCase256x256.ico"
+
+LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
+STRINGTABLE
+BEGIN
+  1 "Statystyki Dysku"
+  2 "Analiza zajętości miejsca na dyskach"
+END

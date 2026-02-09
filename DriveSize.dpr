@@ -13,7 +13,7 @@ uses
   PieRenderer in 'PieRenderer.pas';
 
 {$R *.RES}
-{$R 'DriveSizeResource.res' 'DriveSizeResource.rc'}
+{$R 'DriveSizeResource.res'}
 
 {$E cpl}
 // Definicja stałych i struktur Panelu Sterowania
@@ -31,7 +31,7 @@ type
     idIcon: Integer;
     idName: Integer;
     idInfo: Integer;
-    lData: LongInt;
+    lData: NativeInt;
   end;
   PCPLInfo = ^TCPLInfo;
 
@@ -39,11 +39,11 @@ type
     dwSize: DWORD;
     dwFlags: DWORD;
     dwHelpContext: DWORD;
-    lData: LongInt;
+    lData: NativeInt;
     hIcon: HICON;
-    szName: array[0..31] of Char;
-    szInfo: array[0..63] of Char;
-    szHelpFile: array[0..127] of Char;
+    szName: array[0..31] of WideChar;
+    szInfo: array[0..63] of WideChar;
+    szHelpFile: array[0..127] of WideChar;
   end;
   PNewCPLInfo = ^TNewCPLInfo;
 
@@ -60,15 +60,14 @@ begin
       2: Result := 1; // CPL_GETCOUNT
       3: // CPL_INQUIRE
         begin
-          // Fallback if NEWINQUIRE not sent
           if lParam2 <> 0 then
           begin
-            PCPLInfo(lParam2)^.idIcon := 1;
-            PCPLInfo(lParam2)^.idName := 1;
-            PCPLInfo(lParam2)^.idInfo := 1;
+            PCPLInfo(lParam2)^.idIcon := 1; // Icon Resource ID
+            PCPLInfo(lParam2)^.idName := 1; // String Resource ID (Name)
+            PCPLInfo(lParam2)^.idInfo := 2; // String Resource ID (Info)
             PCPLInfo(lParam2)^.lData := 0;
           end;
-          Result := 0; // Handled
+          Result := 0;
         end;
       8: // CPL_NEWINQUIRE
         begin
@@ -79,14 +78,16 @@ begin
              NewCPLInfo^.dwFlags := 0;
              NewCPLInfo^.dwHelpContext := 0;
              NewCPLInfo^.lData := 0;
-             NewCPLInfo^.hIcon := LoadIcon(HInstance, MakeIntResource(1)); // Try loading icon 1
+             NewCPLInfo^.hIcon := LoadIcon(HInstance, MakeIntResource(1)); 
              
-             // Direct string assignment
-              StrPLCopy(@NewCPLInfo^.szName, 'Drive Size', 31);
-              StrPLCopy(@NewCPLInfo^.szInfo, 'Disk Space Analyzer', 63);
+             // Wczytanie tekstów z zasobów do bufora (to jest kluczowe dla nowoczesnego CPL)
+             // Windows oczekuje, że te pola będą wypełnione, nawet jeśli są zasoby
+             LoadStringW(HInstance, 1, @NewCPLInfo^.szName, 32);
+             LoadStringW(HInstance, 2, @NewCPLInfo^.szInfo, 64);
+             
              NewCPLInfo^.szHelpFile[0] := #0;
           end;
-          Result := 0; // Handled
+          Result := 0; // Handled (Success)
         end;
       5: // CPL_DBLCLK
         begin

@@ -1,0 +1,4 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Control Panel\Cpls]
+"Statystyki Dysku"="D:\\Projekty\\CPL Component Drive Size\\DriveSize.cpl"
