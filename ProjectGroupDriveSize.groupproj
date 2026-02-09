@@ -1,0 +1,36 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{4B156CDC-6FE3-4068-8BD8-6570CB98E51E}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="DriveSize.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="DriveSize">
+        <MSBuild Projects="DriveSize.dproj"/>
+    </Target>
+    <Target Name="DriveSize:Clean">
+        <MSBuild Projects="DriveSize.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="DriveSize:Make">
+        <MSBuild Projects="DriveSize.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="DriveSize"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="DriveSize:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="DriveSize:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>
