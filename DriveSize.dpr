@@ -60,15 +60,20 @@ begin
       2: Result := 1; // CPL_GETCOUNT
       3: // CPL_INQUIRE
         begin
-          // Ignore CPL_INQUIRE to force Windows to use CPL_NEWINQUIRE
-          Result := 1; // Failure/Not Handled
+          if lParam2 <> 0 then
+          begin
+            PCPLInfo(lParam2)^.idIcon := 1; // Icon Resource ID
+            PCPLInfo(lParam2)^.idName := 1; // String Resource ID (Name)
+            PCPLInfo(lParam2)^.idInfo := 2; // String Resource ID (Info)
+            PCPLInfo(lParam2)^.lData := 0;
+          end;
+          Result := 0;
         end;
       8: // CPL_NEWINQUIRE
         begin
-          // Windows Control Panel (especially Win10/11) strictly ignores CPL_NEWINQUIRE 
-          // if CPL_INQUIRE was also handled successfully.
-          // To FORCE the name to show, we must FAIL CPL_INQUIRE (return 1)
-          // or NOT handle it at all, so Windows relies purely on this NEWINQUIRE structure.
+          // Windows requires BOTH Inquire messages to be handled for full compatibility.
+          // CPL_INQUIRE provides the Resource IDs (for name/icon).
+          // CPL_NEWINQUIRE is used for caching and extended info.
           
           if lParam2 <> 0 then
           begin
