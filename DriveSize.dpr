@@ -60,17 +60,16 @@ begin
       2: Result := 1; // CPL_GETCOUNT
       3: // CPL_INQUIRE
         begin
-          if lParam2 <> 0 then
-          begin
-            PCPLInfo(lParam2)^.idIcon := 1; // Icon Resource ID
-            PCPLInfo(lParam2)^.idName := 1; // String Resource ID (Name)
-            PCPLInfo(lParam2)^.idInfo := 2; // String Resource ID (Info)
-            PCPLInfo(lParam2)^.lData := 0;
-          end;
-          Result := 0;
+          // Ignore CPL_INQUIRE to force Windows to use CPL_NEWINQUIRE
+          Result := 1; // Failure/Not Handled
         end;
       8: // CPL_NEWINQUIRE
         begin
+          // Windows Control Panel (especially Win10/11) strictly ignores CPL_NEWINQUIRE 
+          // if CPL_INQUIRE was also handled successfully.
+          // To FORCE the name to show, we must FAIL CPL_INQUIRE (return 1)
+          // or NOT handle it at all, so Windows relies purely on this NEWINQUIRE structure.
+          
           if lParam2 <> 0 then
           begin
              NewCPLInfo := PNewCPLInfo(lParam2);
@@ -80,11 +79,8 @@ begin
              NewCPLInfo^.lData := 0;
              NewCPLInfo^.hIcon := LoadIcon(HInstance, MakeIntResource(1)); 
              
-             // Wczytanie tekstów z zasobów do bufora (to jest kluczowe dla nowoczesnego CPL)
-             // Windows oczekuje, że te pola będą wypełnione, nawet jeśli są zasoby
-             LoadStringW(HInstance, 1, @NewCPLInfo^.szName, 32);
-             LoadStringW(HInstance, 2, @NewCPLInfo^.szInfo, 64);
-             
+             StrLCopy(@NewCPLInfo^.szName, 'Statystyki Dysku', 31);
+             StrLCopy(@NewCPLInfo^.szInfo, 'Analiza zajętości miejsca na dyskach', 63);
              NewCPLInfo^.szHelpFile[0] := #0;
           end;
           Result := 0; // Handled (Success)
