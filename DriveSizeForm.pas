@@ -5,7 +5,7 @@ interface
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
   Vcl.GraphUtil, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.ExtCtrls, System.Generics.Collections,
-  System.Generics.Defaults, System.Math, System.IOUtils, PieRenderer, DirectoryScanner;
+  System.Generics.Defaults, System.Math, System.Types, System.IOUtils, PieRenderer, DirectoryScanner;
 
 const
   MAX_DRIVES = 10;
@@ -122,6 +122,23 @@ var
   FolderName: string;
   LegendX: Integer;
   LFreeAvailable, LTotalSpace, LTotalFree: Int64;
+  PlacedLeft, PlacedRight: TList<TRect>;
+  R: TRect;
+  BoxHalfW, BoxHalfH: Integer;
+  CombinedHalfW: Integer;
+  IsLeft: Boolean;
+  AnchorX, AnchorY, BendX, BendY, EdgeX: Integer;
+  FolderY: Integer;
+  j: Integer;
+  ERect: TRect;
+  Overlap: Boolean;
+  LeftColumnRight, RightColumnLeft, TopBound, BottomBound, LabelGapX: Integer;
+  ScanTxt: string;
+  ScanRect: TRect;
+  StatusTextX, StatusTextY: Integer;
+  TwoLine: Boolean;
+  NameHalfW: Integer;
+  ExtraH: Integer;
 begin
   if FPainting then Exit;
   FPainting := True;
@@ -176,42 +193,225 @@ begin
           Layout, Highlight);
         FLayouts[d] := Layout;
 
-        for i := 0 to High(Layout.Segments) do
-        begin
-          S := Layout.Segments[i];
-          MidAngle := (S.StartAngle + S.EndAngle) / 2.0;
-          LX := CenterX + Round(Radius * 1.5 * Cos(MidAngle * Pi / 180));
-          LY := CenterY - Round(Radius * 1.5 * Sin(MidAngle * Pi / 180));
-          Percent := (S.EndAngle - S.StartAngle) / 360.0;
-          case S.Kind of
-            psTop:
-              begin
-                SizeGB := FDrives[d].TopFolders[S.TopIndex].Size / 1073741824;
-                LabelTxt := Format('%.1f%%  •  %.1f GB', [Percent * 100, SizeGB]);
-                Canvas.Brush.Color := clWhite;
-                Canvas.RoundRect(LX - 25, LY - 10, LX + 25, LY + 10, 5, 5);
-                Canvas.TextOut(LX - (Canvas.TextWidth(LabelTxt) div 2), LY - 7, LabelTxt);
-                Canvas.Brush.Style := bsClear;
-                FolderName := EllipsizeMiddle(FDrives[d].TopFolders[S.TopIndex].Path, 40);
-                Canvas.TextOut(LX - (Canvas.TextWidth(FolderName) div 2), LY + 8, FolderName);
-              end;
-            psOther:
-              begin
-                OtherGB := (Percent * FDrives[d].TotalSize) / 1073741824;
-                LabelTxt := Format('%.1f%%  •  %.1f GB', [Percent * 100, OtherGB]);
-                Canvas.Brush.Color := clWhite;
-                Canvas.RoundRect(LX - 28, LY - 10, LX + 28, LY + 10, 5, 5);
-                Canvas.TextOut(LX - (Canvas.TextWidth(LabelTxt) div 2), LY - 7, LabelTxt);
-              end;
-            psFree:
-              begin
-                FreeGB := (Percent * FDrives[d].TotalSize) / 1073741824;
-                LabelTxt := Format('%.1f%%  •  %.1f GB', [Percent * 100, FreeGB]);
-                Canvas.Brush.Color := clWhite;
-                Canvas.RoundRect(LX - 28, LY - 10, LX + 28, LY + 10, 5, 5);
-                Canvas.TextOut(LX - (Canvas.TextWidth(LabelTxt) div 2), LY - 7, LabelTxt);
-              end;
+        PlacedLeft := TList<TRect>.Create;
+        PlacedRight := TList<TRect>.Create;
+        try
+          LegendY := CenterY - Radius;
+          LegendX := CenterX + Radius + 80;
+          StatusY := (d + 1) * ChartSpacing - 30;
+
+          // parametry kolumn i ograniczenia
+          BoxHalfH := 10; // default; aktualny dla każdego dymka poniżej
+          // Lewa kolumna kończy się przed obszarem Scan i przed kołem
+          LeftColumnRight := CenterX - Radius - 60;
+          // Prawa kolumna zaczyna się przed legendą (margines)
+          RightColumnLeft := LegendX - 12;
+          // Granice pionowe dostępnego pasa
+          TopBound := CenterY - Radius - 8;
+          BottomBound := CenterY + Radius + 8;
+          if BottomBound > (StatusY - 6) then BottomBound := StatusY - 6;
+          // Odległość od koła
+          LabelGapX := 40;
+
+          for i := 0 to High(Layout.Segments) do
+          begin
+            S := Layout.Segments[i];
+            MidAngle := (S.StartAngle + S.EndAngle) / 2.0;
+            Percent := (S.EndAngle - S.StartAngle) / 360.0;
+
+            case S.Kind of
+              psTop:
+                begin
+                  SizeGB := FDrives[d].TopFolders[S.TopIndex].Size / 1073741824;
+                  LabelTxt := Format('%.1f%% . %.1f GB', [Percent * 100, SizeGB]);
+                  FolderName := EllipsizeMiddle(FDrives[d].TopFolders[S.TopIndex].Path, 40);
+                  NameHalfW := Canvas.TextWidth(FolderName) div 2;
+                  TwoLine := True;
+                end;
+              psOther:
+                begin
+                  OtherGB := (Percent * FDrives[d].TotalSize) / 1073741824;
+                  LabelTxt := Format('%.1f%% . %.1f GB', [Percent * 100, OtherGB]);
+                  NameHalfW := 0;
+                  TwoLine := False;
+                end;
+              psFree:
+                begin
+                  FreeGB := (Percent * FDrives[d].TotalSize) / 1073741824;
+                  LabelTxt := Format('%.1f%% . %.1f GB', [Percent * 100, FreeGB]);
+                  NameHalfW := 0;
+                  TwoLine := False;
+                end;
+            end;
+
+            IsLeft := Cos(MidAngle * Pi / 180) < 0;
+            BoxHalfH := 10;
+            BoxHalfW := (Canvas.TextWidth(LabelTxt) div 2) + 6;
+            CombinedHalfW := BoxHalfW;
+            if NameHalfW > CombinedHalfW then CombinedHalfW := NameHalfW;
+            if IsLeft then
+              LX := CenterX - (Radius + LabelGapX)
+            else
+              LX := CenterX + (Radius + LabelGapX);
+            LY := CenterY - Round((Radius + 0) * Sin(MidAngle * Pi / 180));
+
+            // klamry poziome względem kolumn
+            if IsLeft then
+            begin
+              if LX + CombinedHalfW > LeftColumnRight then
+                LX := LeftColumnRight - CombinedHalfW;
+            end
+            else
+            begin
+              if LX + CombinedHalfW > RightColumnLeft then
+                LX := RightColumnLeft - CombinedHalfW;
+            end;
+            if TwoLine then ExtraH := Canvas.TextHeight('Ag') + 2 else ExtraH := 0;
+            R.Left := LX - CombinedHalfW;
+            R.Top := LY - BoxHalfH;
+            R.Right := LX + CombinedHalfW;
+            R.Bottom := LY + BoxHalfH + ExtraH;
+
+            if IsLeft then
+                begin
+                  Overlap := True;
+                  while Overlap do
+                  begin
+                    Overlap := False;
+                    // ograniczenia pionowe
+                    if R.Top < TopBound then
+                    begin
+                      LY := TopBound + BoxHalfH;
+                      R.Top := LY - BoxHalfH;
+                      R.Bottom := LY + BoxHalfH + ExtraH;
+                    end
+                    else if R.Bottom > BottomBound then
+                    begin
+                      LY := BottomBound - BoxHalfH;
+                      R.Top := LY - BoxHalfH;
+                      R.Bottom := LY + BoxHalfH + ExtraH;
+                    end;
+                    for j := 0 to PlacedLeft.Count - 1 do
+                    begin
+                      ERect := PlacedLeft[j];
+                      if not ((R.Right <= ERect.Left) or (R.Left >= ERect.Right) or (R.Bottom <= ERect.Top) or (R.Top >= ERect.Bottom)) then
+                      begin
+                        Overlap := True;
+                        Inc(LY, 20);
+                        if LY + BoxHalfH > BottomBound then
+                          LY := TopBound + BoxHalfH;
+                        R.Top := LY - BoxHalfH;
+                        R.Bottom := LY + BoxHalfH + ExtraH;
+                      end;
+                    end;
+                  end;
+                  PlacedLeft.Add(R);
+                end
+                else
+                begin
+                  Overlap := True;
+                  while Overlap do
+                  begin
+                    Overlap := False;
+                    if R.Top < TopBound then
+                    begin
+                      LY := TopBound + BoxHalfH;
+                      R.Top := LY - BoxHalfH;
+                      R.Bottom := LY + BoxHalfH + ExtraH;
+                    end
+                    else if R.Bottom > BottomBound then
+                    begin
+                      LY := BottomBound - BoxHalfH;
+                      R.Top := LY - BoxHalfH;
+                      R.Bottom := LY + BoxHalfH + ExtraH;
+                    end;
+                    for j := 0 to PlacedRight.Count - 1 do
+                    begin
+                      ERect := PlacedRight[j];
+                      if not ((R.Right <= ERect.Left) or (R.Left >= ERect.Right) or (R.Bottom <= ERect.Top) or (R.Top >= ERect.Bottom)) then
+                      begin
+                        Overlap := True;
+                        Inc(LY, 20);
+                        if LY + BoxHalfH > BottomBound then
+                          LY := TopBound + BoxHalfH;
+                        R.Top := LY - BoxHalfH;
+                        R.Bottom := LY + BoxHalfH + ExtraH;
+                      end;
+                    end;
+                  end;
+                  PlacedRight.Add(R);
+                end;
+
+            AnchorX := CenterX + Round(Radius * Cos(MidAngle * Pi / 180));
+            AnchorY := CenterY - Round(Radius * Sin(MidAngle * Pi / 180));
+            BendX := CenterX + Round((Radius + 8) * Cos(MidAngle * Pi / 180));
+            BendY := CenterY - Round((Radius + 8) * Sin(MidAngle * Pi / 180));
+            if IsLeft then
+              EdgeX := R.Right
+            else
+              EdgeX := R.Left;
+
+            Canvas.Pen.Color := clGray;
+            Canvas.Pen.Width := 1;
+            Canvas.MoveTo(AnchorX, AnchorY);
+            Canvas.LineTo(BendX, BendY);
+            Canvas.LineTo(EdgeX, LY);
+
+            Canvas.Brush.Color := clWhite;
+            Canvas.RoundRect(LX - BoxHalfW, LY - BoxHalfH, LX + BoxHalfW, LY + BoxHalfH, 5, 5);
+            Canvas.Brush.Style := bsClear;
+            Canvas.TextOut(LX - (Canvas.TextWidth(LabelTxt) div 2), LY - 7, LabelTxt);
+
+            if S.Kind = psTop then
+            begin
+              FolderY := LY + BoxHalfH + 2;
+              Canvas.TextOut(LX - (Canvas.TextWidth(FolderName) div 2), FolderY, FolderName);
+            end;
           end;
+          // rozmieść i narysuj napis Scan tak, by nie kolidował z dymkami
+          Canvas.Font.Size := 7;
+          Canvas.Font.Style := [];
+          ScanTxt := Format('Scan: %s (%.0f%%)', [FDrives[d].CurrentFileName, FDrives[d].ScanProgress]);
+          StatusTextX := 40;
+          StatusTextY := StatusY - 14;
+          ScanRect.Left := StatusTextX;
+          ScanRect.Top := StatusTextY;
+          ScanRect.Right := StatusTextX + Canvas.TextWidth(ScanTxt);
+          ScanRect.Bottom := StatusTextY + Canvas.TextHeight(ScanTxt);
+          Overlap := True;
+          while Overlap do
+          begin
+            Overlap := False;
+            if ScanRect.Top < TopBound then
+            begin
+              StatusTextY := TopBound;
+              ScanRect.Top := StatusTextY;
+              ScanRect.Bottom := StatusTextY + Canvas.TextHeight(ScanTxt);
+            end
+            else if ScanRect.Bottom > BottomBound then
+            begin
+              StatusTextY := BottomBound - Canvas.TextHeight(ScanTxt);
+              ScanRect.Top := StatusTextY;
+              ScanRect.Bottom := StatusTextY + Canvas.TextHeight(ScanTxt);
+            end;
+            for j := 0 to PlacedLeft.Count - 1 do
+            begin
+              ERect := PlacedLeft[j];
+              if not ((ScanRect.Right <= ERect.Left) or (ScanRect.Left >= ERect.Right) or (ScanRect.Bottom <= ERect.Top) or (ScanRect.Top >= ERect.Bottom)) then
+              begin
+                Overlap := True;
+                Inc(StatusTextY, 14);
+                if StatusTextY + Canvas.TextHeight(ScanTxt) > BottomBound then
+                  StatusTextY := TopBound;
+                ScanRect.Top := StatusTextY;
+                ScanRect.Bottom := StatusTextY + Canvas.TextHeight(ScanTxt);
+              end;
+            end;
+          end;
+          Canvas.TextOut(StatusTextX, StatusTextY, ScanTxt);
+        finally
+          PlacedLeft.Free;
+          PlacedRight.Free;
         end;
 
         LegendY := CenterY - Radius;
@@ -257,10 +457,7 @@ begin
             FDrives[d].TopFolders[i].Size / 1073741824, TFPercent * 100]));
         end;
 
-        StatusY := (d + 1) * ChartSpacing - 30;
-        Canvas.Font.Size := 7;
-        Canvas.Font.Style := [];
-        Canvas.TextOut(40, StatusY - 14, Format('Scan: %s (%.0f%%)', [FDrives[d].CurrentFileName, FDrives[d].ScanProgress]));
+        // napis Scan został narysowany wcześniej po ułożeniu dymków
 
         Inc(CenterY, ChartSpacing);
       end;

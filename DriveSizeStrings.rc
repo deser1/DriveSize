@@ -1,0 +1,78 @@
+#pragma code_page(65001)
+
+LANGUAGE 0x15, 0x01
+STRINGTABLE
+BEGIN
+  1 "Statystyki Dysku"
+  2 "Analiza zajętości miejsca na dyskach"
+END
+
+LANGUAGE 0x09, 0x01
+STRINGTABLE
+BEGIN
+  1 "Drive Statistics"
+  2 "Disk space usage analysis"
+END
+
+LANGUAGE 0x07, 0x01
+STRINGTABLE
+BEGIN
+  1 "Laufwerksstatistiken"
+  2 "Analyse der Festplattennutzung"
+END
+
+LANGUAGE 0x0C, 0x01
+STRINGTABLE
+BEGIN
+  1 "Statistiques du disque"
+  2 "Analyse de l’utilisation de l’espace disque"
+END
+
+LANGUAGE 0x0A, 0x01
+STRINGTABLE
+BEGIN
+  1 "Estadísticas de disco"
+  2 "Análisis del uso del espacio en disco"
+END
+
+LANGUAGE 0x10, 0x01
+STRINGTABLE
+BEGIN
+  1 "Statistiche dell’unità"
+  2 "Analisi dell’uso dello spazio su disco"
+END
+
+LANGUAGE 0x05, 0x01
+STRINGTABLE
+BEGIN
+  1 "Statistiky disku"
+  2 "Analýza využití místa na disku"
+END
+
+LANGUAGE 0x1B, 0x01
+STRINGTABLE
+BEGIN
+  1 "Štatistiky disku"
+  2 "Analýza využitia miesta na disku"
+END
+
+LANGUAGE 0x22, 0x01
+STRINGTABLE
+BEGIN
+  1 "Статистика диска"
+  2 "Аналіз використання дискового простору"
+END
+
+LANGUAGE 0x19, 0x01
+STRINGTABLE
+BEGIN
+  1 "Статистика диска"
+  2 "Анализ использования дискового пространства"
+END
+
+LANGUAGE 0x09, 0x02
+STRINGTABLE
+BEGIN
+  1 "Drive Statistics"
+  2 "Disk space usage analysis"
+END

@@ -1,4 +1,4 @@
-library DriveSize;
+library BuildDriveSize;
 
 uses
   Vcl.Forms,
@@ -12,12 +12,12 @@ uses
   DirectoryScanner in 'DirectoryScanner.pas',
   PieRenderer in 'PieRenderer.pas';
 
-{$R *.res}
+{$R 'DriveSize.res'}
 {$R 'DriveSizeResource.res'}
 {$R 'DriveSizeStrings.res'}
 
 {$E cpl}
-// Definicja stałych i struktur Panelu Sterowania
+
 const
   CPL_INIT = 1;
   CPL_GETCOUNT = 2;
@@ -48,58 +48,49 @@ type
   end;
   PNewCPLInfo = ^TNewCPLInfo;
 
-// Główna funkcja eksportowana
 function CPlApplet(hwndCPl: HWND; uMsg: UINT; lParam1, lParam2: LPARAM): LongInt; stdcall;
 var
   NewCPLInfo: PNewCPLInfo;
 begin
   Result := 0;
-  OutputDebugString(PChar('CPlApplet Msg: ' + IntToStr(uMsg)));
   try
     case uMsg of
-      1: Result := 1; // CPL_INIT
-      2: Result := 1; // CPL_GETCOUNT
-      3: // CPL_INQUIRE
+      CPL_INIT: Result := 1;
+      CPL_GETCOUNT: Result := 1;
+      CPL_INQUIRE:
         begin
           if lParam2 <> 0 then
           begin
-            PCPLInfo(lParam2)^.idIcon := 1; // Icon Resource ID
-            PCPLInfo(lParam2)^.idName := 1; // String Resource ID (Name)
-            PCPLInfo(lParam2)^.idInfo := 2; // String Resource ID (Info)
+            PCPLInfo(lParam2)^.idIcon := 1;
+            PCPLInfo(lParam2)^.idName := 1;
+            PCPLInfo(lParam2)^.idInfo := 2;
             PCPLInfo(lParam2)^.lData := 0;
           end;
           Result := 0;
         end;
-      8: // CPL_NEWINQUIRE
+      CPL_NEWINQUIRE:
         begin
-          // Windows requires BOTH Inquire messages to be handled for full compatibility.
-          // CPL_INQUIRE provides the Resource IDs (for name/icon).
-          // CPL_NEWINQUIRE is used for caching and extended info.
-          
           if lParam2 <> 0 then
           begin
-             NewCPLInfo := PNewCPLInfo(lParam2);
-             NewCPLInfo^.dwSize := SizeOf(TNewCPLInfo);
-             NewCPLInfo^.dwFlags := 0;
-             NewCPLInfo^.dwHelpContext := 0;
-             NewCPLInfo^.lData := 0;
-             NewCPLInfo^.hIcon := LoadIcon(HInstance, MakeIntResource(1)); 
-             // Preferuj odczyt napisów z zasobów (CPL_INQUIRE -> idName/idInfo)
-             NewCPLInfo^.szName[0] := #0;
-             NewCPLInfo^.szInfo[0] := #0;
-             NewCPLInfo^.szHelpFile[0] := #0;
+            NewCPLInfo := PNewCPLInfo(lParam2);
+            NewCPLInfo^.dwSize := SizeOf(TNewCPLInfo);
+            NewCPLInfo^.dwFlags := 0;
+            NewCPLInfo^.dwHelpContext := 0;
+            NewCPLInfo^.lData := 0;
+            NewCPLInfo^.hIcon := LoadIcon(HInstance, MakeIntResource(1));
+            NewCPLInfo^.szName[0] := #0;
+            NewCPLInfo^.szInfo[0] := #0;
+            NewCPLInfo^.szHelpFile[0] := #0;
           end;
-          Result := 0; // Handled (Success)
+          Result := 0;
         end;
-      5: // CPL_DBLCLK
+      CPL_DBLCLK:
         begin
-          // Inicjalizacja środowiska VCL dla wątków wewnątrz DLL
           Application.Initialize;
           Application.CreateForm(TDriveSizeFrm, DriveSizeFrm);
           try
             DriveSizeFrm.ShowModal;
           finally
-            // Zamykanie wątków przed zwolnieniem formy
             DriveSizeFrm.Free;
             DriveSizeFrm := nil;
           end;
@@ -114,5 +105,4 @@ end;
 exports CPlApplet;
 
 begin
-  // Blok begin-end w DLL powinien być pusty!
 end.
