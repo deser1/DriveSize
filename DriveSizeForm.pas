@@ -31,16 +31,20 @@ type
     procedure FormCreate(Sender: TObject);
     procedure FormActivate(Sender: TObject);
     procedure FormMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+    procedure FormDestroy(Sender: TObject);
   private
     FIsScanning: Boolean;
     FPainting: Boolean;
     FLayouts: array[0..MAX_DRIVES-1] of TPieChartLayout;
     FHoverDrive: Integer;
     FHoverSegmentIndex: Integer;
+    FCurrentScanDrive: Integer;
     
     procedure StartScan;
     procedure DetectDrives;
     procedure ScanDrivesSync;
+    procedure ScanProgress(const DrivePath, CurrentPath: string;
+      ScannedBytes, TotalBytes: Int64);
   public
     procedure AppExceptionHandler(Sender: TObject; E: Exception);
   end;
@@ -56,6 +60,85 @@ procedure GlobalAppExceptionHandler(Sender: TObject; E: Exception);
 function EllipsizeMiddle(const S: string; MaxLen: Integer): string;
 
 implementation
+
+type
+  TScanThread = class(TThread)
+  private
+    FDrivePath: string;
+    FResultTopFolders: TArray<DirectoryScanner.TFolderInfo>;
+    FResultTotalSize: Int64;
+    FResultFreeSpace: Int64;
+    FCurrentPath: string;
+    FScannedBytes: Int64;
+    FTotalBytes: Int64;
+    FDriveIndex: Integer;
+    FOnProgress: TScanProgressProc;
+    procedure DoProgressSync;
+    procedure DoFinishSync;
+    procedure ScanCallback(const DrivePath, CurrentPath: string; ScannedBytes, TotalBytes: Int64);
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(const DrivePath: string; DriveIndex: Integer; OnProgress: TScanProgressProc);
+  end;
+
+constructor TScanThread.Create(const DrivePath: string; DriveIndex: Integer; OnProgress: TScanProgressProc);
+begin
+  inherited Create(True);
+  FreeOnTerminate := True;
+  FDrivePath := DrivePath;
+  FDriveIndex := DriveIndex;
+  FOnProgress := OnProgress;
+end;
+
+procedure TScanThread.ScanCallback(const DrivePath, CurrentPath: string; ScannedBytes, TotalBytes: Int64);
+begin
+  if Terminated then Exit;
+  FCurrentPath := CurrentPath;
+  FScannedBytes := ScannedBytes;
+  FTotalBytes := TotalBytes;
+  Synchronize(DoProgressSync);
+end;
+
+procedure TScanThread.DoProgressSync;
+begin
+  if Assigned(FOnProgress) then
+    FOnProgress(FDrivePath, FCurrentPath, FScannedBytes, FTotalBytes);
+end;
+
+procedure TScanThread.DoFinishSync;
+var
+  k: Integer;
+begin
+  if (FDriveIndex >= 0) and (FDriveIndex < MAX_DRIVES) then
+  begin
+     SetLength(FDrives[FDriveIndex].TopFolders, Length(FResultTopFolders));
+     for k := 0 to High(FResultTopFolders) do
+     begin
+       FDrives[FDriveIndex].TopFolders[k].Path := FResultTopFolders[k].Path;
+       FDrives[FDriveIndex].TopFolders[k].Size := FResultTopFolders[k].Size;
+     end;
+     FDrives[FDriveIndex].TotalSize := FResultTotalSize;
+     FDrives[FDriveIndex].FreeSpace := FResultFreeSpace;
+     FDrives[FDriveIndex].ScanProgress := 100;
+     FDrives[FDriveIndex].CurrentFileName := 'Done';
+     DriveSizeFrm.Invalidate;
+     
+     // Trigger next drive scan
+     DriveSizeFrm.ScanDrivesSync; 
+  end;
+end;
+
+procedure TScanThread.Execute;
+begin
+  try
+    FResultTopFolders := DirectoryScanner.GetTopFolders(FDrivePath, 3, FResultTotalSize, FResultFreeSpace, ScanCallback);
+  except
+    // Log error?
+  end;
+  if not Terminated then
+    Synchronize(DoFinishSync);
+end;
 
 {$R *.dfm}
 
@@ -508,52 +591,52 @@ end;
 procedure TDriveSizeFrm.ScanDrivesSync;
 var
   d: Integer;
-  DriveCount: Integer;
-  TopFolders: TArray<DirectoryScanner.TFolderInfo>;
-  TotalSize, FreeSpace: Int64;
-  k: Integer;
+  t: TScanThread;
 begin
-  FIsScanning := True;
-  try
-    DriveCount := FActualDriveCount;
-    for d := 0 to DriveCount - 1 do
-    begin
-      FDrives[d].CurrentFileName := 'Scanning...';
-      Invalidate;
-      Application.ProcessMessages;
+  if FIsScanning then Exit; // Already running? No, we use this for recursion
 
-      try
-         TopFolders := DirectoryScanner.GetTopFolders(FDrives[d].DriveLetter, 3, TotalSize, FreeSpace);
-         
-         SetLength(FDrives[d].TopFolders, Length(TopFolders));
-         for k := 0 to High(TopFolders) do
-         begin
-           FDrives[d].TopFolders[k].Path := TopFolders[k].Path;
-           FDrives[d].TopFolders[k].Size := TopFolders[k].Size;
-         end;
-         FDrives[d].TotalSize := TotalSize;
-         FDrives[d].FreeSpace := FreeSpace;
-         FDrives[d].ScanProgress := 100;
-         FDrives[d].CurrentFileName := 'Done';
-         
-      except
-        on E: Exception do
-        begin
-           DebugLog('Scan Error on drive ' + IntToStr(d) + ': ' + E.Message);
-           FDrives[d].CurrentFileName := 'Error';
-        end;
-      end;
-      
-      Invalidate;
-      try
-        Application.ProcessMessages;
-      except
-        on E: Exception do DebugLog('ProcessMessages Error: ' + E.Message);
-      end;
-    end;
-  finally
+  // Find next drive to scan
+  d := -1;
+  if FCurrentScanDrive < 0 then
+    d := 0
+  else
+    d := FCurrentScanDrive + 1;
+
+  if d >= FActualDriveCount then
+  begin
     FIsScanning := False;
+    Exit;
   end;
+
+  FIsScanning := True;
+  FCurrentScanDrive := d;
+  
+  FDrives[d].CurrentFileName := 'Scanning...';
+  FDrives[d].ScanProgress := 0;
+  Invalidate;
+
+  t := TScanThread.Create(FDrives[d].DriveLetter, d, ScanProgress);
+  t.Start;
+end;
+
+procedure TDriveSizeFrm.ScanProgress(const DrivePath, CurrentPath: string;
+  ScannedBytes, TotalBytes: Int64);
+var
+  idx: Integer;
+  Pct: Double;
+begin
+  idx := FCurrentScanDrive;
+  if (idx < 0) or (idx >= FActualDriveCount) then Exit;
+  if TotalBytes > 0 then
+  begin
+    Pct := (ScannedBytes / TotalBytes) * 100.0;
+    if Pct > 100.0 then Pct := 100.0;
+    FDrives[idx].ScanProgress := Pct;
+  end
+  else
+    FDrives[idx].ScanProgress := 0;
+  FDrives[idx].CurrentFileName := EllipsizeMiddle(CurrentPath, 60);
+  Invalidate;
 end;
 
 procedure TDriveSizeFrm.StartScan;
@@ -566,8 +649,16 @@ end;
 procedure TDriveSizeFrm.Timer1Timer(Sender: TObject);
 begin
   Timer1.Enabled := False;
+  FCurrentScanDrive := -1;
   ScanDrivesSync;
 end;
+
+procedure TDriveSizeFrm.FormDestroy(Sender: TObject);
+begin
+  // Ensure threads are stopped? 
+  // For CPL, we might need to be careful.
+end;
+
 
 procedure TDriveSizeFrm.AppExceptionHandler(Sender: TObject; E: Exception);
 begin
