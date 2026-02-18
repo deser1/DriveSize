@@ -51,12 +51,12 @@ begin
         // Check time-based update (every 100ms) to keep UI responsive
         if (GetTickCount - LastUpdateTick) > 100 then
         begin
-           if Assigned(OnProgress) and (TotalBytes > 0) then
+           if Assigned(OnProgress) then
              OnProgress(DrivePath, Base + SearchRec.Name, ScannedBytes, TotalBytes);
            LastUpdateTick := GetTickCount;
         end;
 
-        // Omijaj punkty dowiązań (reparse point), aby nie zapętlać
+        // Skip reparse points to avoid loops
         IsReparse := ((Cardinal(SearchRec.Attr) and Cardinal(FILE_ATTRIBUTE_REPARSE_POINT)) <> 0);
         if IsReparse then
           Continue;
@@ -77,7 +77,7 @@ begin
           ItemPath := Base + SearchRec.Name;
           if (ScannedBytes >= NextUpdate) then
           begin
-            if Assigned(OnProgress) and (TotalBytes > 0) then
+            if Assigned(OnProgress) then
               OnProgress(DrivePath, ItemPath, ScannedBytes, TotalBytes);
             // Update every 5 MB
             NextUpdate := ScannedBytes + (5 * 1024 * 1024);
