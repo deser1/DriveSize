@@ -12,6 +12,7 @@ type
     TopIndex: Integer; // dla psTop: indeks top folderu, w przeciwnym razie -1
     StartAngle: Double; // w stopniach [0..360)
     EndAngle: Double;   // w stopniach [0..360)
+    LabelRect: TRect;   // obszar dymka (etykiety)
   end;
 
   TPieChartLayout = record
@@ -38,6 +39,7 @@ begin
   S.TopIndex := TopIndex;
   S.StartAngle := StartA;
   S.EndAngle := EndA;
+  S.LabelRect := TRect.Empty;
   Segs := Segs + [S];
 end;
 

@@ -311,7 +311,7 @@ begin
         PlacedRight := TList<TRect>.Create;
         try
           LegendY := CenterY - Radius;
-          LegendX := CenterX + Radius + 80;
+          LegendX := CenterX + Radius + 100;
           StatusY := (d + 1) * ChartSpacing - 30;
 
           // parametry kolumn i ograniczenia
@@ -337,7 +337,7 @@ begin
               psTop:
                 begin
                   SizeGB := FDrives[d].TopFolders[S.TopIndex].Size / 1073741824;
-                  LabelTxt := Format('%.1f%% . %.1f GB', [Percent * 100, SizeGB]);
+                  LabelTxt := Format('%.1f%% • %.1f GB', [Percent * 100, SizeGB]);
                   FolderName := EllipsizeMiddle(FDrives[d].TopFolders[S.TopIndex].Path, 40);
                   NameHalfW := Canvas.TextWidth(FolderName) div 2;
                   TwoLine := True;
@@ -345,14 +345,14 @@ begin
               psOther:
                 begin
                   OtherGB := (Percent * FDrives[d].TotalSize) / 1073741824;
-                  LabelTxt := Format('%.1f%% . %.1f GB', [Percent * 100, OtherGB]);
+                  LabelTxt := Format('%.1f%% • %.1f GB', [Percent * 100, OtherGB]);
                   NameHalfW := 0;
                   TwoLine := False;
                 end;
               psFree:
                 begin
                   FreeGB := (Percent * FDrives[d].TotalSize) / 1073741824;
-                  LabelTxt := Format('%.1f%% . %.1f GB', [Percent * 100, FreeGB]);
+                  LabelTxt := Format('%.1f%% • %.1f GB', [Percent * 100, FreeGB]);
                   NameHalfW := 0;
                   TwoLine := False;
                 end;
@@ -471,66 +471,108 @@ begin
             else
               EdgeX := R.Left;
 
-            Canvas.Pen.Color := clGray;
-            Canvas.Pen.Width := 1;
+            // Determine highlight state for this segment
+            if (d = FHoverDrive) and (i = FHoverSegmentIndex) then
+            begin
+              Canvas.Pen.Color := $00FF4500; // OrangeRed for highlight
+              Canvas.Pen.Width := 2;
+              Canvas.Brush.Color := $00E0FFFF; // Light Yellow background
+              Canvas.Font.Style := [fsBold];
+            end
+            else
+            begin
+              Canvas.Pen.Color := clGray;
+              Canvas.Pen.Width := 1;
+              Canvas.Brush.Color := clWhite;
+              Canvas.Font.Style := [];
+            end;
+
             Canvas.MoveTo(AnchorX, AnchorY);
             Canvas.LineTo(BendX, BendY);
             Canvas.LineTo(EdgeX, LY);
 
-            Canvas.Brush.Color := clWhite;
+            // Draw bubble with current Brush/Pen settings
+            Layout.Segments[i].LabelRect := Rect(LX - BoxHalfW, LY - BoxHalfH, LX + BoxHalfW, LY + BoxHalfH);
             Canvas.RoundRect(LX - BoxHalfW, LY - BoxHalfH, LX + BoxHalfW, LY + BoxHalfH, 5, 5);
+            
             Canvas.Brush.Style := bsClear;
             Canvas.TextOut(LX - (Canvas.TextWidth(LabelTxt) div 2), LY - 7, LabelTxt);
 
             if S.Kind = psTop then
             begin
               FolderY := LY + BoxHalfH + 2;
+              // Ensure folder name is also bold if highlighted
               Canvas.TextOut(LX - (Canvas.TextWidth(FolderName) div 2), FolderY, FolderName);
             end;
+            
+            // Reset font style for next iterations
+            Canvas.Font.Style := [];
           end;
-          // rozmieść i narysuj napis Scan tak, by nie kolidował z dymkami
+          // rozmieść i narysuj napis Scan pod wykresem
           Canvas.Font.Size := 7;
           Canvas.Font.Style := [];
-          ScanTxt := Format('Scan: %s (%•0f%%)', [FDrives[d].CurrentFileName, FDrives[d].ScanProgress]);
-          StatusTextX := 40;
-          StatusTextY := StatusY - 14;
+          ScanTxt := Format('Scan (%.0f%%): %s', [FDrives[d].ScanProgress, FDrives[d].CurrentFileName]);
+          
+          // Center text below the pie chart
+          StatusTextX := CenterX - (Canvas.TextWidth(ScanTxt) div 2);
+          StatusTextY := CenterY + Radius + 20;
+          
           ScanRect.Left := StatusTextX;
           ScanRect.Top := StatusTextY;
           ScanRect.Right := StatusTextX + Canvas.TextWidth(ScanTxt);
           ScanRect.Bottom := StatusTextY + Canvas.TextHeight(ScanTxt);
+          
           Overlap := True;
           SafetyCount := 0;
+          
+          // Allow it to push down up to the limit of the chart area
           while Overlap and (SafetyCount < 50) do
           begin
             Inc(SafetyCount);
             Overlap := False;
-            if ScanRect.Top < TopBound then
-            begin
-              StatusTextY := TopBound;
-              ScanRect.Top := StatusTextY;
-              ScanRect.Bottom := StatusTextY + Canvas.TextHeight(ScanTxt);
-            end
-            else if ScanRect.Bottom > BottomBound then
-            begin
-              StatusTextY := BottomBound - Canvas.TextHeight(ScanTxt);
-              ScanRect.Top := StatusTextY;
-              ScanRect.Bottom := StatusTextY + Canvas.TextHeight(ScanTxt);
-            end;
+            
+            // Check collision with Left labels
             for j := 0 to PlacedLeft.Count - 1 do
             begin
               ERect := PlacedLeft[j];
               if not ((ScanRect.Right <= ERect.Left) or (ScanRect.Left >= ERect.Right) or (ScanRect.Bottom <= ERect.Top) or (ScanRect.Top >= ERect.Bottom)) then
               begin
                 Overlap := True;
-                Inc(StatusTextY, 14);
-                if StatusTextY + Canvas.TextHeight(ScanTxt) > BottomBound then
-                  StatusTextY := TopBound;
-                ScanRect.Top := StatusTextY;
-                ScanRect.Bottom := StatusTextY + Canvas.TextHeight(ScanTxt);
                 Break;
               end;
             end;
+            
+            // Check collision with Right labels if not already overlapping
+            if not Overlap then
+            begin
+              for j := 0 to PlacedRight.Count - 1 do
+              begin
+                ERect := PlacedRight[j];
+                if not ((ScanRect.Right <= ERect.Left) or (ScanRect.Left >= ERect.Right) or (ScanRect.Bottom <= ERect.Top) or (ScanRect.Top >= ERect.Bottom)) then
+                begin
+                  Overlap := True;
+                  Break;
+                end;
+              end;
+            end;
+            
+            if Overlap then
+            begin
+               // Push down
+               Inc(StatusTextY, 10);
+               ScanRect.Top := StatusTextY;
+               ScanRect.Bottom := StatusTextY + Canvas.TextHeight(ScanTxt);
+               
+               // If we hit the absolute bottom of this chart's area, stop pushing
+               if ScanRect.Bottom > ((d + 1) * ChartSpacing - 5) then
+               begin
+                 // Just give up and place it at the very bottom, even if overlapping
+                 StatusTextY := ((d + 1) * ChartSpacing - 5) - Canvas.TextHeight(ScanTxt);
+                 Overlap := False; 
+               end;
+            end;
           end;
+          
           Canvas.TextOut(StatusTextX, StatusTextY, ScanTxt);
         finally
           PlacedLeft.Free;
@@ -540,9 +582,9 @@ begin
         LegendY := CenterY - Radius;
         Canvas.Brush.Style := bsClear;
         Canvas.Font.Style := [fsBold];
-        Canvas.TextOut(CenterX + Radius + 80, LegendY - 20, 'Drive ' + FDrives[d].DriveLetter);
+        Canvas.TextOut(CenterX + Radius + 100, LegendY - 20, 'Drive ' + FDrives[d].DriveLetter);
 
-        LegendX := CenterX + Radius + 80;
+        LegendX := CenterX + Radius + 100;
         Canvas.Pen.Color := clGray;
         Canvas.Brush.Style := bsSolid;
         Canvas.Brush.Color := $00808080; // Other used
@@ -762,18 +804,38 @@ end;
 
 procedure TDriveSizeFrm.FormMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
 var
-  d, idx: Integer;
+  d, idx, k: Integer;
+  P: TPoint;
 begin
   FHoverDrive := -1;
   FHoverSegmentIndex := -1;
+  P := Point(X, Y);
+  
   for d := 0 to FActualDriveCount - 1 do
   begin
+    // Check Pie
     if HitTestPie(FLayouts[d], X, Y, idx) then
     begin
       FHoverDrive := d;
       FHoverSegmentIndex := idx;
       Break;
     end;
+    
+    // Check Bubbles (Labels)
+    if Length(FLayouts[d].Segments) > 0 then
+    begin
+      for k := 0 to High(FLayouts[d].Segments) do
+      begin
+        if FLayouts[d].Segments[k].LabelRect.Contains(P) then
+        begin
+          FHoverDrive := d;
+          FHoverSegmentIndex := k;
+          Break;
+        end;
+      end;
+    end;
+    
+    if FHoverDrive <> -1 then Break;
   end;
   Invalidate;
 end;
