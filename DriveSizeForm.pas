@@ -1,4 +1,4 @@
-unit DriveSizeForm;
+﻿unit DriveSizeForm;
 
 interface
 
@@ -97,7 +97,43 @@ begin
   FCurrentPath := CurrentPath;
   FScannedBytes := ScannedBytes;
   FTotalBytes := TotalBytes;
-  Synchronize(DoProgressSync);
+  
+  // Use Queue instead of Synchronize for progress updates
+  // This prevents the worker thread from waiting on the main thread,
+  // which might be blocked or busy repainting.
+  //Queue(DoProgressSync); // Queue is available in newer Delphi, but for older ones use Synchronize or PostMessage
+  
+  // Fix for "mouse move required":
+  // In a CPL context, the main thread loop might be stuck in a WaitMessage() call if handled by external host.
+  // Synchronize uses SendMessage which should wake it up, but sometimes TThread's internal hidden window mechanism fails to pump in DLLs.
+  //
+  // We will try PostMessage to the form window directly if handle exists.
+  // This puts a message in the queue, which definitely wakes up GetMessage/WaitMessage.
+  
+  // Ensure message loop is alive
+  if (DriveSizeFrm <> nil) and (DriveSizeFrm.HandleAllocated) then
+  begin
+    // Instead of Queue/Synchronize, we use PostMessage with a custom message.
+    // This is 100% async and non-blocking for the worker thread.
+    // We pass data via pointers (careful with memory) or just signal "update needed".
+    // For simplicity, let's signal update needed and let main thread read shared state.
+    // But shared state access needs locking.
+    
+    // Fallback: If Queue is failing (ghost window), it means Main Thread is not processing Queue.
+    // Let's try TThread.Synchronize again BUT with very strict throttling in DirectoryScanner.
+    // We already did that.
+    
+    // The "White/Ghost Window" means the thread responsible for the window (Main Thread)
+    // has not processed messages for > 5 seconds.
+    // This means DoProgressSync (which calls Invalidate + Update) is taking too long OR is being called too often.
+    
+    // Let's REMOVE "Update" call from DoProgressSync.
+    // Calling "Update" forces a repaint immediately. If repaint takes 50ms, and we call it every 50ms,
+    // the main thread is 100% busy painting and cannot process other messages (like mouse clicks),
+    // eventually Windows marks it as "Not Responding".
+    
+    TThread.Queue(nil, DoProgressSync); 
+  end;
 end;
 
 procedure TScanThread.DoProgressSync;
@@ -125,6 +161,7 @@ begin
      DriveSizeFrm.Invalidate;
      
      // Trigger next drive scan
+     DriveSizeFrm.FIsScanning := False; // Allow next scan to start
      DriveSizeFrm.ScanDrivesSync; 
   end;
 end;
@@ -195,6 +232,7 @@ var
   TopSizes: TArray<Int64>;
   TotalFree: Int64;
   TotalUsedInChart: Int64;
+  SafetyCount: Integer;
   Highlight: Integer;
   S: TPieSegment;
   MidAngle, Percent: Double;
@@ -251,16 +289,9 @@ begin
       
       for d := 0 to DriveCount - 1 do
       begin
-        TotalFree := 0;
-        if GetDiskFreeSpaceExW(PChar(FDrives[d].DriveLetter), LFreeAvailable, LTotalSpace, LTotalFree) then
-        begin
-           FDrives[d].FreeSpace := LFreeAvailable;
-           FDrives[d].TotalSize := LTotalSpace;
-           TotalFree := LTotalFree;
-        end
-        else
-          Continue;
-
+        // Do not call GetDiskFreeSpaceExW here! It is slow and can block painting.
+        // We use cached values in FDrives.
+        
         SetLength(TopSizes, Length(FDrives[d].TopFolders));
         TotalUsedInChart := 0;
         for i := 0 to High(TopSizes) do
@@ -358,8 +389,10 @@ begin
             if IsLeft then
                 begin
                   Overlap := True;
-                  while Overlap do
+                  SafetyCount := 0;
+                  while Overlap and (SafetyCount < 50) do
                   begin
+                    Inc(SafetyCount);
                     Overlap := False;
                     // ograniczenia pionowe
                     if R.Top < TopBound then
@@ -385,6 +418,7 @@ begin
                           LY := TopBound + BoxHalfH;
                         R.Top := LY - BoxHalfH;
                         R.Bottom := LY + BoxHalfH + ExtraH;
+                        Break; // Break inner for-loop to restart check
                       end;
                     end;
                   end;
@@ -393,8 +427,10 @@ begin
                 else
                 begin
                   Overlap := True;
-                  while Overlap do
+                  SafetyCount := 0;
+                  while Overlap and (SafetyCount < 50) do
                   begin
+                    Inc(SafetyCount);
                     Overlap := False;
                     if R.Top < TopBound then
                     begin
@@ -419,6 +455,7 @@ begin
                           LY := TopBound + BoxHalfH;
                         R.Top := LY - BoxHalfH;
                         R.Bottom := LY + BoxHalfH + ExtraH;
+                        Break; // Break inner for-loop to restart check
                       end;
                     end;
                   end;
@@ -454,7 +491,7 @@ begin
           // rozmieść i narysuj napis Scan tak, by nie kolidował z dymkami
           Canvas.Font.Size := 7;
           Canvas.Font.Style := [];
-          ScanTxt := Format('Scan: %s (%.0f%%)', [FDrives[d].CurrentFileName, FDrives[d].ScanProgress]);
+          ScanTxt := Format('Scan: %s (%•0f%%)', [FDrives[d].CurrentFileName, FDrives[d].ScanProgress]);
           StatusTextX := 40;
           StatusTextY := StatusY - 14;
           ScanRect.Left := StatusTextX;
@@ -462,8 +499,10 @@ begin
           ScanRect.Right := StatusTextX + Canvas.TextWidth(ScanTxt);
           ScanRect.Bottom := StatusTextY + Canvas.TextHeight(ScanTxt);
           Overlap := True;
-          while Overlap do
+          SafetyCount := 0;
+          while Overlap and (SafetyCount < 50) do
           begin
+            Inc(SafetyCount);
             Overlap := False;
             if ScanRect.Top < TopBound then
             begin
@@ -488,6 +527,7 @@ begin
                   StatusTextY := TopBound;
                 ScanRect.Top := StatusTextY;
                 ScanRect.Bottom := StatusTextY + Canvas.TextHeight(ScanTxt);
+                Break;
               end;
             end;
           end;
@@ -567,6 +607,7 @@ var
   DriveMask: DWORD;
   i: Integer;
   DrivePath: string;
+  LFreeAvailable, LTotalSpace, LTotalFree: Int64;
 begin
   DebugLog('DetectDrives: start');
   DriveMask := GetLogicalDrives;
@@ -582,6 +623,14 @@ begin
       begin
         FDrives[FActualDriveCount].DriveLetter := DrivePath;
         FDrives[FActualDriveCount].CurrentFileName := 'Waiting...';
+        
+        // Initial size check
+        if GetDiskFreeSpaceExW(PChar(DrivePath), LFreeAvailable, LTotalSpace, LTotalFree) then
+        begin
+           FDrives[FActualDriveCount].FreeSpace := LFreeAvailable;
+           FDrives[FActualDriveCount].TotalSize := LTotalSpace;
+        end;
+        
         Inc(FActualDriveCount);
       end;
     end;
@@ -636,6 +685,16 @@ begin
   else
     FDrives[idx].ScanProgress := 0;
   FDrives[idx].CurrentFileName := EllipsizeMiddle(CurrentPath, 60);
+  
+  // Only invalidate the area of the text to avoid full repaint spam
+  // But for simplicity, we call Invalidate. 
+  // To ensure the message loop processes the paint message immediately:
+  // Invalidate;
+  // Update; // Force repaint immediately -> REMOVED. This was causing "Not Responding".
+  
+  // Just use Invalidate. The message loop will paint when it can.
+  // Since we use TThread.Queue, the main thread will eventually process this and then paint.
+  // If we force Update, we starve the message loop.
   Invalidate;
 end;
 

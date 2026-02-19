@@ -96,16 +96,28 @@ begin
     UsedBytes := TotalSize - FreeSpace;
     OtherUsedBytes := UsedBytes - TotalUsedInChart;
     if OtherUsedBytes < 0 then OtherUsedBytes := 0;
+    
+    // Always show 'Other' if it's significant, even if it's small percentage
+    // For very small drives or near empty, precision might be an issue.
+    // Let's lower the threshold or ensure angle > 0
+    
     OtherPercent := OtherUsedBytes / TotalSize;
-    if OtherPercent > 0.001 then
+    if (OtherPercent > 0.001) or (OtherUsedBytes > 1048576) then // Show if > 0.1% or > 1MB
     begin
       EndAngle := StartAngle + (OtherPercent * 360);
-      Canvas.Brush.Color := $00808080;
-      Canvas.Pie(CenterX - Radius, CenterY - Radius, CenterX + Radius, CenterY + Radius,
-                 CenterX + Round(Radius * Cos(StartAngle * Pi / 180)), CenterY - Round(Radius * Sin(StartAngle * Pi / 180)),
-                 CenterX + Round(Radius * Cos(EndAngle * Pi / 180)), CenterY - Round(Radius * Sin(EndAngle * Pi / 180)));
-      AddSegment(Layout.Segments, psOther, -1, StartAngle, EndAngle);
-      StartAngle := EndAngle;
+      
+      // Ensure we don't exceed 360 due to float errors before Free space
+      if EndAngle > 360 then EndAngle := 360; 
+      
+      if EndAngle > StartAngle then
+      begin
+        Canvas.Brush.Color := $00808080;
+        Canvas.Pie(CenterX - Radius, CenterY - Radius, CenterX + Radius, CenterY + Radius,
+                   CenterX + Round(Radius * Cos(StartAngle * Pi / 180)), CenterY - Round(Radius * Sin(StartAngle * Pi / 180)),
+                   CenterX + Round(Radius * Cos(EndAngle * Pi / 180)), CenterY - Round(Radius * Sin(EndAngle * Pi / 180)));
+        AddSegment(Layout.Segments, psOther, -1, StartAngle, EndAngle);
+        StartAngle := EndAngle;
+      end;
     end;
   end;
 

@@ -1,4 +1,4 @@
-library DriveSize;
+﻿library DriveSize;
 
 uses
   Vcl.Forms,

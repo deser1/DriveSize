@@ -48,26 +48,36 @@ begin
         if (SearchRec.Name = '.') or (SearchRec.Name = '..') then
           Continue;
 
-        // Check time-based update (every 100ms) to keep UI responsive
-        if (GetTickCount - LastUpdateTick) > 100 then
+        // Check time-based update (every 500ms) to keep UI responsive but not flooded
+        if (GetTickCount - LastUpdateTick) > 500 then
         begin
            if Assigned(OnProgress) then
              OnProgress(DrivePath, Base + SearchRec.Name, ScannedBytes, TotalBytes);
            LastUpdateTick := GetTickCount;
+           // Also push the size threshold forward to avoid double update
+           NextUpdate := ScannedBytes + (50 * 1024 * 1024);
         end;
 
         // Skip reparse points to avoid loops
+        // Ensure we check FILE_ATTRIBUTE_REPARSE_POINT correctly.
+        // Some directories like "System Volume Information" might cause issues.
         IsReparse := ((Cardinal(SearchRec.Attr) and Cardinal(FILE_ATTRIBUTE_REPARSE_POINT)) <> 0);
         if IsReparse then
           Continue;
+
         IsDir := ((Cardinal(SearchRec.Attr) and Cardinal(faDirectory)) <> 0);
         if IsDir then
         begin
+          // Check for "System Volume Information" or other restricted folders explicitly if needed
+          // For now, rely on try-except inside
           try
             Inc(Result, GetFolderSizeRecursive(DrivePath, Base + SearchRec.Name,
               ScannedBytes, TotalBytes, NextUpdate, LastUpdateTick, OnProgress));
           except
-            on E: Exception do ;
+            on E: Exception do 
+            begin
+               // If access denied or other error, just ignore this folder and continue
+            end;
           end;
         end
         else
@@ -77,11 +87,14 @@ begin
           ItemPath := Base + SearchRec.Name;
           if (ScannedBytes >= NextUpdate) then
           begin
-            if Assigned(OnProgress) then
-              OnProgress(DrivePath, ItemPath, ScannedBytes, TotalBytes);
-            // Update every 5 MB
-            NextUpdate := ScannedBytes + (5 * 1024 * 1024);
-            LastUpdateTick := GetTickCount;
+            if (GetTickCount - LastUpdateTick) > 200 then // Additional throttle for size updates
+            begin
+              if Assigned(OnProgress) then
+                OnProgress(DrivePath, ItemPath, ScannedBytes, TotalBytes);
+              LastUpdateTick := GetTickCount;
+            end;
+            // Update every 50 MB
+            NextUpdate := ScannedBytes + (50 * 1024 * 1024);
           end;
         end;
       until FindNext(SearchRec) <> 0;
@@ -116,7 +129,7 @@ begin
 
   SetLength(TempList, 0);
   ScannedBytes := 0;
-  NextUpdate := 5 * 1024 * 1024;
+  NextUpdate := 50 * 1024 * 1024;
   LastUpdateTick := GetTickCount;
   try
     try
